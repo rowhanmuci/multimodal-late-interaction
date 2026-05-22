@@ -1,0 +1,27 @@
+# Large embedding files (regenerate with --extract)
+*.pt
+
+# Zip packages
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Internal project tracking
+STATUS.md
+Project_Guideline.md
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
