@@ -50,16 +50,18 @@ def load_model():
 
 
 # ── Dataset ────────────────────────────────────────────────────────────────────
-N_EVAL = 1000   # standard 1K retrieval benchmark subset
-
 def load_flickr30k():
-    print("[*] Loading nlphuji/flickr30k test split (first 1000 images)...")
+    print("[*] Loading nlphuji/flickr30k — Karpathy test split...")
     ds = load_dataset("nlphuji/flickr30k", split="test")
-    n  = min(len(ds), N_EVAL)
-    print(f"    Using {n} images.")
+    if "split" in ds.column_names:
+        test_idx = [i for i, row in enumerate(ds) if row["split"] == "test"]
+    else:
+        test_idx = list(range(min(len(ds), 1000)))
+    n = len(test_idx)
+    print(f"    {n} images in Karpathy test split.")
 
-    images   = [ds[i]["image"] for i in range(n)]
-    captions = [ds[i]["caption"][j] for i in range(n) for j in range(5)]
+    images   = [ds[i]["image"]      for i in test_idx]
+    captions = [ds[i]["caption"][j] for i in test_idx for j in range(5)]
 
     t2i_gt = [c // 5 for c in range(len(captions))]
     i2t_gt = [[5*i + j for j in range(5)] for i in range(n)]
@@ -291,20 +293,24 @@ if __name__ == "__main__":
                 os.remove(p)
                 print(f"[*] Removed {p}")
 
-    # Ground truth is deterministic — no need to load the dataset for it
-    t2i_gt = [c // 5 for c in range(5000)]
-    i2t_gt = [[5 * i + j for j in range(5)] for i in range(1000)]
-
     cached = all(os.path.exists(p) for p in
                  [IMG_TOK_PATH, TXT_TOK_PATH, IMG_MASK_PATH, TXT_MASK_PATH])
 
     if cached:
+        # Still need ground truth — load dataset (cached, fast) but skip image loading
+        from datasets import load_dataset as _lds
+        _ds = _lds("nlphuji/flickr30k", split="test")
+        _test_idx = [i for i, row in enumerate(_ds) if row.get("split") == "test"] \
+                    if "split" in _ds.column_names else list(range(1000))
+        _n = len(_test_idx)
+        t2i_gt = [c // 5 for c in range(_n * 5)]
+        i2t_gt = [[5*i + j for j in range(5)] for i in range(_n)]
         img_embs, img_masks, txt_embs, txt_masks = get_token_embeddings(
             None, None, None, None
         )
     else:
         processor, model = load_model()
-        images, captions, _, _ = load_flickr30k()
+        images, captions, t2i_gt, i2t_gt = load_flickr30k()
         img_embs, img_masks, txt_embs, txt_masks = get_token_embeddings(
             processor, model, images, captions
         )

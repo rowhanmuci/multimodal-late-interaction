@@ -4,6 +4,15 @@
 # Zip packages
 *.zip
 
+# PDF references (too large for git)
+*.pdf
+
+# Plan files
+baseline-python-c-users-user-miniconda3-jolly-church.md
+
+# ViDoRe cache
+vidore_cache/
+
 # Python
 __pycache__/
 *.pyc

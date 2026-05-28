@@ -56,12 +56,21 @@ def eval_pair(t2i_scores, i2t_scores):
 
 
 # ── Baseline ablation ──────────────────────────────────────────────────────────
-N_EVAL = 1000   # use same 1K subset as late_interaction.py for fair comparison
+def _get_test_indices():
+    from datasets import load_dataset
+    ds = load_dataset("nlphuji/flickr30k", split="test")
+    if "split" in ds.column_names:
+        return [i for i, row in enumerate(ds) if row["split"] == "test"]
+    return list(range(min(len(ds), 1000)))
+
 
 def run_baseline_ablation():
-    print("[*] Loading baseline embeddings (first 1K images)...")
-    img_full = torch.load("image_embs.pt", weights_only=True)[:N_EVAL]          # [1000, 2048] f32
-    txt_full = torch.load("text_embs.pt",  weights_only=True)[:N_EVAL * 5]      # [5000, 2048] f32
+    print("[*] Loading baseline embeddings (Karpathy test split)...")
+    test_idx = _get_test_indices()
+    txt_idx  = [5*i + j for i in test_idx for j in range(5)]
+
+    img_full = torch.load("image_embs.pt", weights_only=True)[test_idx]   # [1000, 2048] f32
+    txt_full = torch.load("text_embs.pt",  weights_only=True)[txt_idx]    # [5000, 2048] f32
 
     results = {}
     for dim in DIMS:
