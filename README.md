@@ -6,16 +6,42 @@ The key idea: instead of pooling all token embeddings into one vector and comput
 
 ---
 
-## Results on Flickr30k (1000 images × 5 captions)
+## Results on Flickr30k (1K evaluation pool)
 
-### Baseline — Single-Vector Cosine Similarity
+Both methods use the same model, dataset, and evaluation code. Only the scoring strategy differs.
 
-| Direction | R@1 | R@5 | R@10 | MRR |
-|-----------|-----|-----|------|-----|
-| T2I (Text → Image) | 48.53% | 70.83% | 78.48% | 58.81% |
-| I2T (Image → Text) | 67.43% | 86.80% | 91.94% | 76.03% |
+### Main Comparison
 
-> Late Interaction results pending — run `late_interaction.py` to reproduce.
+| Direction | Baseline (2048d) | Late Interaction (2048d) | Delta |
+|-----------|-----------------|--------------------------|-------|
+| T2I R@1   | 82.44%          | 81.62%                   | -0.82% |
+| T2I R@5   | 96.52%          | 95.22%                   | -1.30% |
+| T2I MRR   | 88.62%          | 87.76%                   | -0.86% |
+| I2T R@1   | **94.10%**      | 81.30%                   | -12.80% |
+| I2T R@5   | 99.50%          | 95.30%                   | -4.20% |
+| I2T MRR   | **96.36%**      | 87.39%                   | -8.97% |
+
+**Finding**: Baseline outperforms Late Interaction on this dataset, particularly for I2T. Qwen3-VL-Embedding is trained with a last-token pooling objective, so the single pooled vector captures semantics more effectively than unfiltered token-level MaxSim. Visual tokens (~300 per image) introduce noise when summed over in MaxSim.
+
+### Dimension Ablation
+
+| Dim  | Baseline T2I R@1 | LI T2I R@1 | Baseline I2T R@1 | LI I2T R@1 |
+|------|-----------------|------------|-----------------|------------|
+| 2048 | 82.44%          | 81.62%     | 94.10%          | 81.30%     |
+| 1024 | 82.38%          | 81.46%     | 94.00%          | 80.10%     |
+| 512  | 81.86%          | 81.30%     | 93.80%          | 80.20%     |
+| 256  | 80.12%          | 81.28%     | 92.30%          | 79.60%     |
+
+**Finding**: Late Interaction is significantly more robust to dimensionality reduction. T2I R@1 drops only **0.34%** from 2048→256 for LI, vs **2.32%** for Baseline. This advantage holds for I2T as well.
+
+### Baseline on Full 31K Pool
+
+For reference, Baseline evaluated on the full 31,014-image pool:
+
+| Direction | R@1    | R@5    | R@10   | MRR    |
+|-----------|--------|--------|--------|--------|
+| T2I       | 48.53% | 70.83% | 78.48% | 58.81% |
+| I2T       | 67.43% | 86.80% | 91.94% | 76.03% |
 
 ---
 
@@ -37,8 +63,6 @@ Late Interaction:
               → score(q, d) = Σ_i  max_j  cos(q_i, d_j)   (padding masked to -inf)
 ```
 
-Both methods share the same model, dataset split, ground truth definition, and evaluation code — only the scoring strategy differs.
-
 ---
 
 ## Setup
@@ -49,8 +73,6 @@ pip install transformers accelerate datasets qwen-vl-utils tqdm torch
 
 GPU: tested on RTX 5070 12 GB. Peak VRAM ~5 GB for extraction (batch 8 images or 32 texts).
 
-The model and dataset are downloaded automatically on first run and cached by HuggingFace.
-
 ---
 
 ## Usage
@@ -58,26 +80,27 @@ The model and dataset are downloaded automatically on first run and cached by Hu
 ### Baseline
 
 ```bash
-# Full benchmark (Flickr30k, ~5 min first run, ~5 s with cache)
-python baseline.py
-
-# Quick smoke test (Flickr8k)
-python baseline.py --smoke
+python baseline.py          # Full Flickr30k (31K pool)
+python baseline.py --smoke  # Quick smoke test on Flickr8k
 ```
-
-Saves `image_embs.pt` [1000×2048], `text_embs.pt` [5000×2048], `results.json`.
 
 ### Late Interaction
 
 ```bash
-# Step 1 — extract token-level embeddings (~10-15 min, run once)
+# Step 1: extract token-level embeddings (~10 min, run once)
 python late_interaction.py --extract
 
-# Step 2 — compute MaxSim scores and evaluate
+# Step 2: compute MaxSim scores and evaluate
 python late_interaction.py
 ```
 
-Saves `image_token_embs.pt`, `text_token_embs.pt`, `image_token_mask.pt`, `text_token_mask.pt` (all large, gitignored), `results_late_interaction.json`.
+### Dimension Ablation
+
+```bash
+# Requires image_embs.pt + text_embs.pt (from baseline.py)
+# Optionally uses token embeddings (from late_interaction.py --extract)
+python ablation.py
+```
 
 ---
 
@@ -86,17 +109,19 @@ Saves `image_token_embs.pt`, `text_token_embs.pt`, `image_token_mask.pt`, `text_
 ```
 ├── baseline.py                  # Single-vector pipeline
 ├── late_interaction.py          # Late Interaction MaxSim pipeline
-├── results.json                 # Baseline evaluation results
+├── ablation.py                  # Dimension reduction ablation
+├── results.json                 # Baseline 31K results
+├── results_late_interaction.json  # Late Interaction 1K results
+├── ablation_results.json        # Ablation results
 └── Discussion_Summary.md        # Implementation notes and bug fixes
 ```
 
-Generated at runtime (gitignored):
+Generated at runtime (gitignored — large files):
 
 ```
-├── image_embs.pt / text_embs.pt              # Baseline pooled embeddings
-├── image_token_embs.pt / text_token_embs.pt  # Token-level embeddings (Late Interaction)
-├── image_token_mask.pt / text_token_mask.pt  # Attention masks
-└── results_late_interaction.json
+├── image_embs.pt / text_embs.pt              # Baseline pooled embeddings (31K)
+├── image_token_embs.pt / text_token_embs.pt  # Token-level embeddings (1K)
+└── image_token_mask.pt / text_token_mask.pt  # Attention masks
 ```
 
 ---

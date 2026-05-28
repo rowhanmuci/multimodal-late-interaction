@@ -50,11 +50,13 @@ def load_model():
 
 
 # ── Dataset ────────────────────────────────────────────────────────────────────
+N_EVAL = 1000   # standard 1K retrieval benchmark subset
+
 def load_flickr30k():
-    print("[*] Loading nlphuji/flickr30k test split...")
+    print("[*] Loading nlphuji/flickr30k test split (first 1000 images)...")
     ds = load_dataset("nlphuji/flickr30k", split="test")
-    n  = len(ds)
-    print(f"    {n} images loaded.")
+    n  = min(len(ds), N_EVAL)
+    print(f"    Using {n} images.")
 
     images   = [ds[i]["image"] for i in range(n)]
     captions = [ds[i]["caption"][j] for i in range(n) for j in range(5)]
@@ -284,15 +286,30 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.extract:
-        # Delete cache to force re-extraction
         for p in [IMG_TOK_PATH, TXT_TOK_PATH, IMG_MASK_PATH, TXT_MASK_PATH]:
             if os.path.exists(p):
                 os.remove(p)
                 print(f"[*] Removed {p}")
 
-    processor, model = load_model()
-    images, captions, t2i_gt, i2t_gt = load_flickr30k()
-    img_embs, img_masks, txt_embs, txt_masks = get_token_embeddings(
-        processor, model, images, captions
-    )
+    # Ground truth is deterministic — no need to load the dataset for it
+    t2i_gt = [c // 5 for c in range(5000)]
+    i2t_gt = [[5 * i + j for j in range(5)] for i in range(1000)]
+
+    cached = all(os.path.exists(p) for p in
+                 [IMG_TOK_PATH, TXT_TOK_PATH, IMG_MASK_PATH, TXT_MASK_PATH])
+
+    if cached:
+        img_embs, img_masks, txt_embs, txt_masks = get_token_embeddings(
+            None, None, None, None
+        )
+    else:
+        processor, model = load_model()
+        images, captions, _, _ = load_flickr30k()
+        img_embs, img_masks, txt_embs, txt_masks = get_token_embeddings(
+            processor, model, images, captions
+        )
+        del processor, model
+        torch.cuda.empty_cache()
+        print("[*] Model unloaded — VRAM freed for MaxSim.")
+
     evaluate(img_embs, img_masks, txt_embs, txt_masks, t2i_gt, i2t_gt)
